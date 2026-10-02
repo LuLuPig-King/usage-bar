@@ -31,10 +31,10 @@ const resetsIn = (resetsAt: string | undefined, now: number) => {
   if (!resetsAt) return ''
   const secs = Math.floor((Date.parse(resetsAt) - now) / 1000)
   if (secs <= 0) return 'soon'
-  const d = Math.floor(secs / 86400)
-  const h = Math.floor((secs % 86400) / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  return d > 0 ? `${d}d${h}h` : h > 0 ? `${h}h${m}m` : `${m}m`
+  const days = Math.floor(secs / 86400)
+  const hours = Math.floor((secs % 86400) / 3600)
+  const mins = Math.floor((secs % 3600) / 60)
+  return days > 0 ? `${days}d${hours}h` : hours > 0 ? `${hours}h${mins}m` : `${mins}m`
 }
 
 const GREEN = '#30A46C'
