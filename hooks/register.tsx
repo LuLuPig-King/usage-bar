@@ -1,13 +1,12 @@
-import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { UsageView } from '../types'
 
-// 账本和额度缓存都放在插件自己的 $.store(跨会话保存, 位于用户的 Claude Code 配置目录下), 不碰任何绝对路径
+// Ledger and rate-limit cache live in the plugin's own $.store (kept across sessions, under the Claude Code config directory), so no absolute paths are used
 const LEDGER_KEY = 'ledger'
-// 上次读到的 5h/7d 额度: 新会话第一次回复前接口还没数据, 先显示上次的值, 免得一片 --
+// Last-seen 5h/7d windows: before the first reply of a new session the API has no data yet, so show the last values instead of all "--"
 const WINDOWS_KEY = 'windows'
-// 账本只保留最近这么久的会话基线, 防止无限增长
+// Keep per-session baselines only this long, so the ledger cannot grow forever
 const SESSION_KEEP_SECS = 40 * 86400
 
 type Ledger = {
@@ -15,7 +14,8 @@ type Ledger = {
   days: Record<string, number>
 }
 
-const view = atom({ plugin: 'usage-bar', key: 'view' } as const, null)
+// Reference to the state value this plugin draws from (plugin and key must be literals)
+const view = { plugin: 'usage-bar', key: 'view' } as const
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (ms: number) => {
@@ -26,7 +26,7 @@ const dayKey = (ms: number) => {
 const money = (n?: number) =>
   n === undefined ? '--' : n >= 100 ? `$${Math.floor(n)}` : `$${n.toFixed(2)}`
 
-// 距离重置的剩余时间: 1h7m / 3d2h / 12m, 不带 "resets" 字样
+// Time left until reset: 1h7m / 3d2h / 12m, without a "resets" prefix
 const resetsIn = (resetsAt: string | undefined, now: number) => {
   if (!resetsAt) return ''
   const secs = Math.floor((Date.parse(resetsAt) - now) / 1000)
@@ -49,7 +49,7 @@ const glyph = (kind: 'clock' | 'calendar' | 'dollar', c: string) => {
   return `<text x="13" y="17.4" text-anchor="middle" font-size="12" font-weight="700" fill="${c}" font-family="ui-sans-serif,system-ui,sans-serif">$</text>`
 }
 
-// 圆环: 浅色底圈 + 按百分比绘制的弧, 中间一个小图标
+// Ring: faint track + an arc drawn to the percentage, with a small icon in the middle
 const ring = (pct: number, c: string, kind: 'clock' | 'calendar' | 'dollar') => {
   const r = 10
   const len = 2 * Math.PI * r
@@ -70,7 +70,7 @@ async function refresh($: EngineInterface) {
 
   if (cost !== undefined) {
     const last = ledger.sessions[sid]?.cost
-    // 首次见到的会话: 开始不到 10 分钟按全额计入, 否则视为老会话只记基线
+    // First time this session is seen: count its full cost if it started under 10 minutes ago, otherwise treat it as an old session and only record a baseline
     const delta =
       last === undefined
         ? now - usage.startedAt < 600000 ? cost : 0
@@ -102,14 +102,14 @@ async function refresh($: EngineInterface) {
     month: monthTotal,
     now,
   }
-  await update($, view, () => next)
+  await $.state.set(view, next)
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await refresh($)
-    // 每分钟刷新一次, 让倒计时走动
+    // Refresh every minute so the countdown keeps moving
     $.clock.every(60000, () => {
       void refresh($)
     })
@@ -123,19 +123,19 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const v = await read($, view)
+    const { value: v = null } = await $.state.get(view)
     if (e.props.hasSurvey || v === null) return next(e)
 
     const t = $.ui.resolve(e)
     const { Box, Text } = t
     const Svg = 'Svg' in t ? t.Svg : null
-    // 同一位置还有别的 mod(如 plan-progress 进度条): 先拿到它们画的内容
+    // Other mods may draw in this same spot (e.g. a progress bar): get what they draw first
     const below = await next(e)
-    // next(e) 没人画时也可能返回一个空壳, 只有里面真有文字/图/按钮才算有内容, 否则卡片下面会多出一行空白
+    // next(e) can return an empty shell when nothing below draws; only real text/image/button content counts, otherwise the card gets a blank row under it
     const hasBelow = below != null && /"type":"(Text|Svg|Button|Input|Markdown|Image|Raster)"/.test(JSON.stringify(below))
 
-    // 桌面版已经给这个位置套了圆角卡片和内边距, 这里不再画背景和上下边距, 否则就是框里套框
-    // 一组: 圆环图标 + 主数字(白色加粗) + 淡色说明; 所有部分禁止收缩, 否则窄的时候文字会被挤成两行
+    // The desktop app already wraps this spot in a rounded card with padding, so draw no background or vertical padding here, otherwise it is a frame inside a frame
+    // One group: ring icon + main number (white, bold) + dim description; nothing may shrink, or text wraps onto two lines when narrow
     const item = (kind: 'clock' | 'calendar' | 'dollar', pct: number, ringColor: string, main: string, parts: string[], mainColor?: string) => (
       <Box flexDirection="row" alignItems="center" gap={1} flexShrink={0}>
         {Svg ? <Svg source={ring(pct, ringColor, kind)} alt={`${kind} ${Math.round(pct)}%`} width={23} height={23} /> : null}
@@ -157,7 +157,7 @@ export const register: Register = on => {
       return item(icon, pct, tone(pct), `${pct}%`, [left ? `${label} · ${left}` : label])
     }
 
-    // 按卡片实际宽度(e.props.bodyColumns, 桌面版实测约 9.5px 一列)收缩: 全部约 61 列, 窄了先去掉 mo, 再去掉 today, 最后只留 5h 和 7d
+    // Shrink to the card's actual width (e.props.bodyColumns, about 9.5px per column on desktop): everything needs about 61 columns; when narrower drop mo, then today, and finally keep only 5h and 7d
     const cols = e.props.bodyColumns
     const costParts = cols >= 64 ? [`${money(v.today)} today`, `${money(v.month)} mo`] : cols >= 56 ? [`${money(v.today)} today`] : []
     const row = (
