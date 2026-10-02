@@ -1,0 +1,12 @@
+{
+  "name": "lulu-mods",
+  "owner": { "name": "LULU" },
+  "metadata": { "description": "Claude Code mods by LULU" },
+  "plugins": [
+    {
+      "name": "usage-bar",
+      "source": "./",
+      "description": "A usage card above the prompt: 5h and 7d rate-limit rings with time to reset, plus session, today and month cost."
+    }
+  ]
+}
