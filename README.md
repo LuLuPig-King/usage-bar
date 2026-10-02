@@ -2,6 +2,8 @@
 
 A Claude Code [mod](https://claude.com/blog/claude-code-mods) that draws a usage card above the prompt.
 
+![Usage card above the prompt](docs/preview.png)
+
 ```
 (clock ring) 14%  5h · 1h7m    (calendar ring) 83%  7d · 2d18h    ($ ring) $8.58  $14.76 today  $14.76 mo
 ```
@@ -35,10 +37,6 @@ Mods are not sandboxed, so here is everything this one does:
 - No network access, no shell commands, no file access outside its own store.
 
 "Today" and "month" start counting from the day you install it, and follow your computer's local time.
-
-## 中文说明
-
-输入框上方的用量卡片：5h、7d 额度的圆环加距离重置的剩余时间，以及本次、今日、本月花费。5h/7d 只有订阅用户才有数据，使用 API Key 时这两组显示 `--`。圆环图标需要桌面版，终端里显示为纯文字。它只读取会话用量，只写入自己的存储（账本和上次的额度），不联网、不执行命令。今日和本月从安装当天开始累计，按电脑本地时间换日。
 
 ## License
 
